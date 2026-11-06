@@ -50,6 +50,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   List<FoodItem> _items = [];
+  List<UsageEvent> _events = [];
   bool _loading = true;
   String? _error;
   int _tab = 0;
@@ -65,7 +66,8 @@ class _HomePageState extends State<HomePage> {
   Future<void> _reload() async {
     try {
       final items = await FoodDatabase.instance.all();
-      if (mounted) setState(() { _items = items; _loading = false; _error = null; });
+      final events = await FoodDatabase.instance.history();
+      if (mounted) setState(() { _items = items; _events = events; _loading = false; _error = null; });
     } catch (e) {
       if (mounted) setState(() { _loading = false; _error = '$e'; });
     }
@@ -76,9 +78,9 @@ class _HomePageState extends State<HomePage> {
     if (saved == true) await _reload();
   }
 
-  Future<void> _setItem(FoodItem item, {double? quantity, String? status}) async {
+  Future<void> _useItem(FoodItem item, {required String action, required double amount}) async {
     try {
-      await FoodDatabase.instance.save(item.copyWith(quantity: quantity, status: status, updatedAt: DateTime.now()));
+      await FoodDatabase.instance.recordUsage(item, action: action, amount: amount);
       await _reload();
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')));
@@ -106,12 +108,10 @@ class _HomePageState extends State<HomePage> {
         if (item.status == 'active') ...[
           ListTile(leading: const Icon(Icons.remove_circle_outline), title: Text('ใช้ไป 1 ${item.unit}'), onTap: () {
             Navigator.pop(sheetContext);
-            final left = item.quantity - 1;
-            if (left <= 0) { _setItem(item, quantity: 0, status: 'used'); }
-            else { _setItem(item, quantity: left); }
+            _useItem(item, action: 'used', amount: item.quantity < 1 ? item.quantity : 1);
           }),
-          ListTile(leading: const Icon(Icons.check_circle_outline), title: const Text('ใช้หมดแล้ว'), onTap: () { Navigator.pop(sheetContext); _setItem(item, quantity: 0, status: 'used'); }),
-          ListTile(leading: const Icon(Icons.delete_sweep_outlined), title: const Text('ทิ้งแล้ว'), onTap: () { Navigator.pop(sheetContext); _setItem(item, status: 'discarded'); }),
+          ListTile(leading: const Icon(Icons.check_circle_outline), title: const Text('ใช้หมดแล้ว'), onTap: () { Navigator.pop(sheetContext); _useItem(item, action: 'used', amount: item.quantity); }),
+          ListTile(leading: const Icon(Icons.delete_sweep_outlined), title: const Text('ทิ้งแล้ว'), onTap: () { Navigator.pop(sheetContext); _useItem(item, action: 'discarded', amount: item.quantity); }),
         ],
         ListTile(leading: const Icon(Icons.delete_forever_outlined, color: Colors.red), title: const Text('ลบรายการ'), onTap: () { Navigator.pop(sheetContext); _remove(item); }),
       ])),
@@ -131,11 +131,15 @@ class _HomePageState extends State<HomePage> {
       });
     final urgent = active.where((x) { final d = x.daysUntilExpiry(now); return d != null && d >= 0 && d <= 3; }).length;
     final expired = active.where((x) { final d = x.daysUntilExpiry(now); return d != null && d < 0; }).length;
-    final shown = (_tab == 2 ? _items.where((x) => x.status != 'active') : active).where((x) {
+    final amountsByUnit = <String, double>{};
+    for (final item in active) {
+      amountsByUnit.update(item.unit, (value) => value + item.quantity, ifAbsent: () => item.quantity);
+    }
+    final amountSummary = amountsByUnit.entries.map((e) => '${formatQty(e.value)} ${e.key}').join(' · ');
+    final shown = active.where((x) {
       final matchSearch = x.name.toLowerCase().contains(_query.trim().toLowerCase());
       return matchSearch && (_filter == 'ทั้งหมด' || x.category == _filter);
     }).toList();
-    if (_tab == 2) shown.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return Scaffold(
       appBar: AppBar(title: const Row(children: [Icon(Icons.kitchen, color: seedGreen), SizedBox(width: 10), Text('Fridge Keeper')]),
         actions: [IconButton(tooltip: 'รีเฟรช', onPressed: _reload, icon: const Icon(Icons.refresh))]),
@@ -149,12 +153,21 @@ class _HomePageState extends State<HomePage> {
                 const Text('เช็กก่อนซื้อ กินก่อนหมด ลดของเสีย', style: TextStyle(color: Colors.black54)),
                 const SizedBox(height: 16),
                 Row(children: [
-                  Expanded(child: _StatCard('คงเหลือ', '${active.length}', Icons.inventory_2_outlined, seedGreen)),
+                  Expanded(child: _StatCard('รายการอาหาร', '${active.length}', Icons.inventory_2_outlined, seedGreen)),
                   const SizedBox(width: 8),
                   Expanded(child: _StatCard('ใกล้หมด', '$urgent', Icons.schedule, Colors.orange.shade800)),
                   const SizedBox(width: 8),
                   Expanded(child: _StatCard('เลยวัน', '$expired', Icons.warning_amber, Colors.red.shade700)),
                 ]),
+                const SizedBox(height: 8),
+                Card(color: const Color(0xFFE5F3EA), elevation: 0, child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Row(children: [Icon(Icons.inventory_2_outlined, color: seedGreen), SizedBox(width: 8), Text('จำนวนคงเหลือแยกตามหน่วย', style: TextStyle(fontWeight: FontWeight.bold))]),
+                    const SizedBox(height: 8),
+                    Text(amountSummary.isEmpty ? 'ยังไม่มีอาหาร' : amountSummary),
+                  ]),
+                )),
                 const SizedBox(height: 18),
                 if (urgent + expired > 0) Card(color: const Color(0xFFFFF0E1), child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
                   const Icon(Icons.notifications_active_outlined, color: Color(0xFFAD5600)), const SizedBox(width: 10),
@@ -166,14 +179,20 @@ class _HomePageState extends State<HomePage> {
                 Text(_tab == 1 ? 'อาหารทั้งหมด' : 'ประวัติการใช้', style: const TextStyle(fontSize: 23, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
               ],
-              TextField(onChanged: (v) => setState(() => _query = v), decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'ค้นหาชื่ออาหาร...')),
-              const SizedBox(height: 8),
-              SizedBox(height: 42, child: ListView(scrollDirection: Axis.horizontal, children: ['ทั้งหมด', ...categories].map((c) => Padding(
-                padding: const EdgeInsets.only(right: 6), child: ChoiceChip(label: Text(c), selected: _filter == c, onSelected: (_) => setState(() => _filter = c)),
-              )).toList())),
+              if (_tab != 2) ...[
+                TextField(onChanged: (v) => setState(() => _query = v), decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'ค้นหาชื่ออาหาร...')),
+                const SizedBox(height: 8),
+                SizedBox(height: 42, child: ListView(scrollDirection: Axis.horizontal, children: ['ทั้งหมด', ...categories].map((c) => Padding(
+                  padding: const EdgeInsets.only(right: 6), child: ChoiceChip(label: Text(c), selected: _filter == c, onSelected: (_) => setState(() => _filter = c)),
+                )).toList())),
+              ],
               const SizedBox(height: 6),
             ]))),
-            if (shown.isEmpty) SliverFillRemaining(hasScrollBody: false, child: Center(child: Padding(padding: const EdgeInsets.all(30), child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (_tab == 2) ...[
+              if (_events.isEmpty) const SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('ยังไม่มีประวัติการใช้\nลองกดใช้ไป 1 หน่วยจากรายการอาหาร', textAlign: TextAlign.center)))
+              else SliverPadding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 100), sliver: SliverList.builder(itemCount: _events.length,
+                itemBuilder: (context, index) => UsageEventCard(event: _events[index]))),
+            ] else if (shown.isEmpty) SliverFillRemaining(hasScrollBody: false, child: Center(child: Padding(padding: const EdgeInsets.all(30), child: Column(mainAxisSize: MainAxisSize.min, children: [
               const Icon(Icons.kitchen_outlined, size: 64, color: Colors.black26), const SizedBox(height: 10),
               Text(_items.isEmpty ? 'ยังไม่มีอาหารในตู้เย็น\nกด + เพื่อเพิ่มรายการแรก' : 'ไม่มีรายการที่ตรงกับตัวกรอง', textAlign: TextAlign.center),
             ]))))
@@ -201,6 +220,31 @@ class _StatCard extends StatelessWidget {
     Icon(icon, color: color), const SizedBox(height: 6), Text(value, style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: color)),
     Text(label, style: const TextStyle(fontSize: 12)),
   ])));
+}
+
+class UsageEventCard extends StatelessWidget {
+  const UsageEventCard({super.key, required this.event});
+  final UsageEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final discarded = event.action == 'discarded';
+    final date = event.recordedAt;
+    final time = '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    return Card(elevation: 0, color: Colors.white, margin: const EdgeInsets.only(bottom: 9), child: Padding(
+      padding: const EdgeInsets.all(14), child: Row(children: [
+        CircleAvatar(backgroundColor: discarded ? const Color(0xFFFFE8E8) : const Color(0xFFE5F3EA),
+          child: Icon(discarded ? Icons.delete_outline : Icons.remove_circle_outline, color: discarded ? Colors.red : seedGreen)),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(event.foodName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 3),
+          Text('${discarded ? 'ทิ้ง' : 'ใช้ไป'} ${formatQty(event.amount)} ${event.unit} · เหลือ ${formatQty(event.remaining)} ${event.unit}', style: const TextStyle(fontSize: 12)),
+          Text('${formatDate(date)} เวลา $time', style: const TextStyle(color: Colors.black54, fontSize: 12)),
+        ])),
+      ]),
+    ));
+  }
 }
 
 class FoodCard extends StatelessWidget {
