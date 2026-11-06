@@ -63,9 +63,9 @@ class FoodDatabase {
   }
 
   /// Both the stock update and its history entry succeed or fail together.
-  Future<void> recordUsage(FoodItem item, {required String action, required double amount}) async {
+  Future<int> recordUsage(FoodItem item, {required String action, required double amount}) async {
     final db = await database;
-    await db.transaction((txn) async {
+    return db.transaction<int>((txn) async {
       final currentRows = await txn.query('foods', where: 'id = ?', whereArgs: [item.id], limit: 1);
       if (currentRows.isEmpty) throw StateError('ไม่พบรายการอาหาร');
       final current = FoodItem.fromMap(currentRows.first);
@@ -77,11 +77,38 @@ class FoodDatabase {
       final status = action == 'discarded' ? 'discarded' : remaining <= 0 ? 'used' : 'active';
       final now = DateTime.now();
       await txn.update('foods', current.copyWith(quantity: remaining, status: status, updatedAt: now).toMap(), where: 'id = ?', whereArgs: [item.id]);
-      await txn.insert('usage_events', {
+      return txn.insert('usage_events', {
         'food_id': item.id, 'food_name': current.name, 'action': action,
         'amount': amount, 'unit': current.unit, 'remaining': remaining,
         'recorded_at': now.toIso8601String(),
       });
+    });
+  }
+
+  /// Undo only the latest usage event for an item, so later edits are not lost.
+  Future<void> undoUsage(int eventId) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final events = await txn.query('usage_events', where: 'id = ?', whereArgs: [eventId], limit: 1);
+      if (events.isEmpty) throw StateError('ไม่พบประวัติที่ต้องการย้อนกลับ');
+      final event = events.single;
+      final foodId = event['food_id'] as String;
+      final last = await txn.query('usage_events', columns: ['id'], where: 'food_id = ?',
+        whereArgs: [foodId], orderBy: 'id DESC', limit: 1);
+      if (last.isEmpty || last.single['id'] != eventId) {
+        throw StateError('มีการใช้รายการนี้เพิ่มเติมแล้ว จึงไม่สามารถย้อนกลับครั้งก่อน');
+      }
+      final foods = await txn.query('foods', where: 'id = ?', whereArgs: [foodId], limit: 1);
+      if (foods.isEmpty) throw StateError('รายการอาหารถูกลบไปแล้ว');
+      final food = FoodItem.fromMap(foods.single);
+      final remaining = (event['remaining'] as num).toDouble();
+      if ((food.quantity - remaining).abs() > 0.000001) {
+        throw StateError('จำนวนอาหารถูกแก้ไขแล้ว ไม่สามารถย้อนกลับอัตโนมัติ');
+      }
+      final amount = (event['amount'] as num).toDouble();
+      await txn.update('foods', food.copyWith(quantity: remaining + amount,
+        status: 'active', updatedAt: DateTime.now()).toMap(), where: 'id = ?', whereArgs: [foodId]);
+      await txn.delete('usage_events', where: 'id = ?', whereArgs: [eventId]);
     });
   }
 
@@ -103,9 +130,10 @@ class FoodDatabase {
 }
 
 class UsageEvent {
-  const UsageEvent({required this.id, required this.foodName, required this.action,
+  const UsageEvent({required this.id, required this.foodId, required this.foodName, required this.action,
     required this.amount, required this.unit, required this.remaining, required this.recordedAt});
   final int id;
+  final String foodId;
   final String foodName;
   final String action;
   final double amount;
@@ -114,7 +142,7 @@ class UsageEvent {
   final DateTime recordedAt;
 
   factory UsageEvent.fromMap(Map<String, Object?> map) => UsageEvent(
-    id: map['id'] as int, foodName: map['food_name'] as String,
+    id: map['id'] as int, foodId: map['food_id'] as String, foodName: map['food_name'] as String,
     action: map['action'] as String, amount: (map['amount'] as num).toDouble(),
     unit: map['unit'] as String, remaining: (map['remaining'] as num).toDouble(),
     recordedAt: DateTime.parse(map['recorded_at'] as String),
