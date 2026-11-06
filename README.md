@@ -1,4 +1,4 @@
-# Fridge Keeper V0.4
+# Fridge Keeper V0.4.1
 
 Offline-first Android Flutter app to track food, quantities, storage locations, and expiry dates. Thai UI. No login, cloud, or product key.
 
@@ -28,6 +28,8 @@ Offline-first Android Flutter app to track food, quantities, storage locations, 
 - Undo from the confirmation snackbar or the latest event for each item in History.
 - Undo restores stock, reactivates a depleted item, and removes the reversed usage event atomically.
 - Enter a custom amount to consume from an item's action menu (e.g. use 3 eggs at once).
+- Dashboard is shorter: removed the redundant grouped-unit summary panel.
+- Confirm before consuming the last available quantity or discarding an item; regular partial use remains one tap with Undo.
 - SQLite local persistence and local permanent photo copies.
 - No account, internet, or push notifications required.
 
