@@ -1,4 +1,4 @@
-# Fridge Keeper V0.2
+# Fridge Keeper V0.3
 
 Offline-first Android Flutter app to track food, quantities, storage locations, and expiry dates. Thai UI. No login, cloud, or product key.
 
@@ -13,7 +13,7 @@ Offline-first Android Flutter app to track food, quantities, storage locations, 
 
 **Note:** The Flutter and Dart SDK are not installed in the build environment used to prepare this archive; therefore compilation and device testing could not be run here. Android platform boilerplate is generated on your computer in step 3. Start with `flutter analyze` and `flutter test` locally.
 
-## V0.2 features
+## V0.3 features
 
 - Dashboard with counts, urgent items, sorted expiry-first.
 - Add, edit, search, filter, and delete food.
@@ -22,6 +22,9 @@ Offline-first Android Flutter app to track food, quantities, storage locations, 
 - Consume one unit, mark finished, mark discarded. Each action creates a dated usage history event.
 - Dashboard distinguishes item count from stock quantities, grouped by unit (boxes, bottles, grams, etc.).
 - SQLite schema automatically migrates from v1 to v2, retaining existing food rows.
+- Compact dashboard and small add button that no longer covers food cards.
+- Quick-use minus button directly on each food card, with a confirmation snackbar.
+- Usage history grouped by day, with totals for used and discarded actions.
 - SQLite local persistence and local permanent photo copies.
 - No account, internet, or push notifications required.
 
