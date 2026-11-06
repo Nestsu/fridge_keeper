@@ -82,6 +82,10 @@ class _HomePageState extends State<HomePage> {
     try {
       await FoodDatabase.instance.recordUsage(item, action: action, amount: amount);
       await _reload();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${action == 'discarded' ? 'บันทึกการทิ้ง' : 'ใช้ไป'} ${formatQty(amount)} ${item.unit} · ${item.name}'),
+        duration: const Duration(seconds: 2),
+      ));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')));
     }
@@ -151,7 +155,7 @@ class _HomePageState extends State<HomePage> {
                 const Text('ตู้เย็นของฉัน', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 4),
                 const Text('เช็กก่อนซื้อ กินก่อนหมด ลดของเสีย', style: TextStyle(color: Colors.black54)),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
                 Row(children: [
                   Expanded(child: _StatCard('รายการอาหาร', '${active.length}', Icons.inventory_2_outlined, seedGreen)),
                   const SizedBox(width: 8),
@@ -168,16 +172,21 @@ class _HomePageState extends State<HomePage> {
                     Text(amountSummary.isEmpty ? 'ยังไม่มีอาหาร' : amountSummary),
                   ]),
                 )),
-                const SizedBox(height: 18),
+                const SizedBox(height: 10),
                 if (urgent + expired > 0) Card(color: const Color(0xFFFFF0E1), child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
                   const Icon(Icons.notifications_active_outlined, color: Color(0xFFAD5600)), const SizedBox(width: 10),
                   Expanded(child: Text('มี ${urgent + expired} รายการที่ควรตรวจสอบก่อนกิน', style: const TextStyle(fontWeight: FontWeight.w700))),
                 ]))),
-                const SizedBox(height: 15),
+                const SizedBox(height: 10),
                 const Text('ควรจัดการก่อน', style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold)),
               ] else ...[
                 Text(_tab == 1 ? 'อาหารทั้งหมด' : 'ประวัติการใช้', style: const TextStyle(fontSize: 23, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
+                if (_tab == 2 && _events.isNotEmpty) ...[
+                  Text('บันทึกแล้ว ${_events.length} ครั้ง · ใช้ ${_events.where((e) => e.action == 'used').length} ครั้ง · ทิ้ง ${_events.where((e) => e.action == 'discarded').length} ครั้ง',
+                    style: const TextStyle(color: Colors.black54)),
+                  const SizedBox(height: 8),
+                ],
               ],
               if (_tab != 2) ...[
                 TextField(onChanged: (v) => setState(() => _query = v), decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'ค้นหาชื่ออาหาร...')),
@@ -190,17 +199,28 @@ class _HomePageState extends State<HomePage> {
             ]))),
             if (_tab == 2) ...[
               if (_events.isEmpty) const SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('ยังไม่มีประวัติการใช้\nลองกดใช้ไป 1 หน่วยจากรายการอาหาร', textAlign: TextAlign.center)))
-              else SliverPadding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 100), sliver: SliverList.builder(itemCount: _events.length,
-                itemBuilder: (context, index) => UsageEventCard(event: _events[index]))),
+              else SliverPadding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), sliver: SliverList.builder(itemCount: _events.length,
+                itemBuilder: (context, index) {
+                  final event = _events[index];
+                  final date = event.recordedAt;
+                  final previousDate = index == 0 ? null : _events[index - 1].recordedAt;
+                  final showDate = previousDate == null || date.year != previousDate.year || date.month != previousDate.month || date.day != previousDate.day;
+                  return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    if (showDate) Padding(padding: const EdgeInsets.fromLTRB(5, 12, 0, 8), child: Text(formatDate(date), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black54))),
+                    UsageEventCard(event: event),
+                  ]);
+                })),
             ] else if (shown.isEmpty) SliverFillRemaining(hasScrollBody: false, child: Center(child: Padding(padding: const EdgeInsets.all(30), child: Column(mainAxisSize: MainAxisSize.min, children: [
               const Icon(Icons.kitchen_outlined, size: 64, color: Colors.black26), const SizedBox(height: 10),
               Text(_items.isEmpty ? 'ยังไม่มีอาหารในตู้เย็น\nกด + เพื่อเพิ่มรายการแรก' : 'ไม่มีรายการที่ตรงกับตัวกรอง', textAlign: TextAlign.center),
             ]))))
             else SliverPadding(padding: const EdgeInsets.fromLTRB(16, 2, 16, 100), sliver: SliverList.builder(itemCount: shown.length, itemBuilder: (ctx, i) => FoodCard(
               item: shown[i], now: now, onTap: () => _showActions(shown[i]),
+              onQuickUse: () => _useItem(shown[i], action: 'used', amount: shown[i].quantity < 1 ? shown[i].quantity : 1),
             ))),
           ])),
-      floatingActionButton: FloatingActionButton.extended(onPressed: () => _openEditor(), icon: const Icon(Icons.add), label: const Text('เพิ่มอาหาร')),
+      floatingActionButton: _tab == 2 ? null : FloatingActionButton.small(
+        tooltip: 'เพิ่มอาหาร', onPressed: () => _openEditor(), child: const Icon(Icons.add)),
       bottomNavigationBar: NavigationBar(selectedIndex: _tab, onDestinationSelected: (v) => setState(() { _tab = v; _query = ''; _filter = 'ทั้งหมด'; }), destinations: const [
         NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'หน้าหลัก'),
         NavigationDestination(icon: Icon(Icons.list_alt_outlined), selectedIcon: Icon(Icons.list_alt), label: 'อาหาร'),
@@ -216,8 +236,8 @@ class _StatCard extends StatelessWidget {
   final IconData icon;
   final Color color;
   @override
-  Widget build(BuildContext context) => Card(elevation: 0, color: Colors.white, child: Padding(padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 7), child: Column(children: [
-    Icon(icon, color: color), const SizedBox(height: 6), Text(value, style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: color)),
+  Widget build(BuildContext context) => Card(elevation: 0, color: Colors.white, child: Padding(padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 5), child: Column(children: [
+    Icon(icon, color: color, size: 22), const SizedBox(height: 3), Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color)),
     Text(label, style: const TextStyle(fontSize: 12)),
   ])));
 }
@@ -248,10 +268,11 @@ class UsageEventCard extends StatelessWidget {
 }
 
 class FoodCard extends StatelessWidget {
-  const FoodCard({super.key, required this.item, required this.now, required this.onTap});
+  const FoodCard({super.key, required this.item, required this.now, required this.onTap, required this.onQuickUse});
   final FoodItem item;
   final DateTime now;
   final VoidCallback onTap;
+  final VoidCallback onQuickUse;
 
   @override
   Widget build(BuildContext context) {
@@ -271,7 +292,13 @@ class FoodCard extends StatelessWidget {
           const SizedBox(height: 3), Text('${formatQty(item.quantity)} ${item.unit} · ${item.location}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.black54)),
           const SizedBox(height: 5), Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: color, fontSize: 13)),
         ])),
-        const Icon(Icons.chevron_right, color: Colors.black38),
+        IconButton.filledTonal(
+          tooltip: 'ใช้ไป ${item.quantity < 1 ? formatQty(item.quantity) : '1'} ${item.unit}',
+          onPressed: onQuickUse,
+          icon: const Icon(Icons.remove, size: 20),
+          visualDensity: VisualDensity.compact,
+        ),
+        const Icon(Icons.chevron_right, color: Colors.black38, size: 18),
       ])),
     ));
   }
