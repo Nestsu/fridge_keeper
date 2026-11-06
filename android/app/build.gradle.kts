@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.example.fridge_keeper"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
