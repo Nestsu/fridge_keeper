@@ -79,6 +79,20 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _useItem(FoodItem item, {required String action, required double amount}) async {
+    // Confirm before an action removes the item from the active inventory.
+    if (action == 'discarded' || amount >= item.quantity) {
+      final discard = action == 'discarded';
+      final confirmed = await showDialog<bool>(context: context, builder: (dialogContext) => AlertDialog(
+        title: Text(discard ? 'ยืนยันทิ้งอาหาร?' : 'ยืนยันใช้ของหมด?'),
+        content: Text('${item.name}\n${discard ? 'ทิ้ง' : 'ใช้'} ${formatQty(amount)} ${item.unit}\n\nรายการนี้จะหายจากอาหารคงเหลือ แต่ยังมีประวัติการใช้และสามารถย้อนกลับได้'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('ยกเลิก')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(discard ? 'ยืนยันทิ้ง' : 'ยืนยันใช้หมด')),
+        ],
+      ));
+      if (confirmed != true || !mounted) return;
+    }
     try {
       final eventId = await FoodDatabase.instance.recordUsage(item, action: action, amount: amount);
       await _reload();
@@ -181,11 +195,6 @@ class _HomePageState extends State<HomePage> {
       });
     final urgent = active.where((x) { final d = x.daysUntilExpiry(now); return d != null && d >= 0 && d <= 3; }).length;
     final expired = active.where((x) { final d = x.daysUntilExpiry(now); return d != null && d < 0; }).length;
-    final amountsByUnit = <String, double>{};
-    for (final item in active) {
-      amountsByUnit.update(item.unit, (value) => value + item.quantity, ifAbsent: () => item.quantity);
-    }
-    final amountSummary = amountsByUnit.entries.map((e) => '${formatQty(e.value)} ${e.key}').join(' · ');
     final shown = active.where((x) {
       final matchSearch = x.name.toLowerCase().contains(_query.trim().toLowerCase());
       return matchSearch && (_filter == 'ทั้งหมด' || x.category == _filter);
@@ -209,15 +218,6 @@ class _HomePageState extends State<HomePage> {
                   const SizedBox(width: 8),
                   Expanded(child: _StatCard('เลยวัน', '$expired', Icons.warning_amber, Colors.red.shade700)),
                 ]),
-                const SizedBox(height: 8),
-                Card(color: const Color(0xFFE5F3EA), elevation: 0, child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Row(children: [Icon(Icons.inventory_2_outlined, color: seedGreen), SizedBox(width: 8), Text('จำนวนคงเหลือแยกตามหน่วย', style: TextStyle(fontWeight: FontWeight.bold))]),
-                    const SizedBox(height: 8),
-                    Text(amountSummary.isEmpty ? 'ยังไม่มีอาหาร' : amountSummary),
-                  ]),
-                )),
                 const SizedBox(height: 10),
                 if (urgent + expired > 0) Card(color: const Color(0xFFFFF0E1), child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
                   const Icon(Icons.notifications_active_outlined, color: Color(0xFFAD5600)), const SizedBox(width: 10),
