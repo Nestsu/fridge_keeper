@@ -80,17 +80,58 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _useItem(FoodItem item, {required String action, required double amount}) async {
     try {
-      await FoodDatabase.instance.recordUsage(item, action: action, amount: amount);
+      final eventId = await FoodDatabase.instance.recordUsage(item, action: action, amount: amount);
       await _reload();
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('${action == 'discarded' ? 'บันทึกการทิ้ง' : 'ใช้ไป'} ${formatQty(amount)} ${item.unit} · ${item.name}'),
-          duration: const Duration(seconds: 2),
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(label: 'เลิกทำ', onPressed: () => _undoUse(eventId)),
         ));
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')));
     }
+  }
+
+  Future<void> _undoUse(int eventId) async {
+    try {
+      await FoodDatabase.instance.undoUsage(eventId);
+      await _reload();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('คืนจำนวนอาหารและยกเลิกประวัติแล้ว')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ย้อนกลับไม่สำเร็จ: $e')));
+    }
+  }
+
+  Future<void> _askAmount(FoodItem item) async {
+    final controller = TextEditingController(text: item.quantity < 1 ? formatQty(item.quantity) : '1');
+    final formKey = GlobalKey<FormState>();
+    final amount = await showDialog<double>(context: context, builder: (dialogContext) => AlertDialog(
+      title: Text('ใช้ ${item.name}'),
+      content: Form(key: formKey, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('มีอยู่ ${formatQty(item.quantity)} ${item.unit}'),
+        const SizedBox(height: 14),
+        TextFormField(controller: controller, autofocus: true, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(labelText: 'จำนวนที่ใช้ (${item.unit})'),
+          validator: (value) {
+            final number = double.tryParse((value ?? '').trim());
+            if (number == null || !number.isFinite || number <= 0 || number > item.quantity) {
+              return 'กรอกจำนวนมากกว่า 0 ไม่เกิน ${formatQty(item.quantity)}';
+            }
+            return null;
+          }),
+      ])),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('ยกเลิก')),
+        FilledButton(onPressed: () {
+          if (formKey.currentState!.validate()) Navigator.pop(dialogContext, double.parse(controller.text.trim()));
+        }, child: const Text('บันทึกการใช้')),
+      ],
+    ));
+    controller.dispose();
+    if (amount != null && mounted) await _useItem(item, action: 'used', amount: amount);
   }
 
   Future<void> _remove(FoodItem item) async {
@@ -116,6 +157,9 @@ class _HomePageState extends State<HomePage> {
             Navigator.pop(sheetContext);
             _useItem(item, action: 'used', amount: item.quantity < 1 ? item.quantity : 1);
           }),
+          ListTile(leading: const Icon(Icons.edit_note_outlined), title: const Text('ระบุจำนวนที่ใช้เอง'),
+            subtitle: Text('เลือกจำนวนได้สูงสุด ${formatQty(item.quantity)} ${item.unit}'),
+            onTap: () { Navigator.pop(sheetContext); _askAmount(item); }),
           ListTile(leading: const Icon(Icons.check_circle_outline), title: const Text('ใช้หมดแล้ว'), onTap: () { Navigator.pop(sheetContext); _useItem(item, action: 'used', amount: item.quantity); }),
           ListTile(leading: const Icon(Icons.delete_sweep_outlined), title: const Text('ทิ้งแล้ว'), onTap: () { Navigator.pop(sheetContext); _useItem(item, action: 'discarded', amount: item.quantity); }),
         ],
@@ -209,7 +253,8 @@ class _HomePageState extends State<HomePage> {
                   final showDate = previousDate == null || date.year != previousDate.year || date.month != previousDate.month || date.day != previousDate.day;
                   return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     if (showDate) Padding(padding: const EdgeInsets.fromLTRB(5, 12, 0, 8), child: Text(formatDate(date), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black54))),
-                    UsageEventCard(event: event),
+                    UsageEventCard(event: event,
+                      onUndo: _events.take(index).any((e) => e.foodId == event.foodId) ? null : () => _undoUse(event.id)),
                   ]);
                 })),
             ] else if (shown.isEmpty) SliverFillRemaining(hasScrollBody: false, child: Center(child: Padding(padding: const EdgeInsets.all(30), child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -245,8 +290,9 @@ class _StatCard extends StatelessWidget {
 }
 
 class UsageEventCard extends StatelessWidget {
-  const UsageEventCard({super.key, required this.event});
+  const UsageEventCard({super.key, required this.event, this.onUndo});
   final UsageEvent event;
+  final VoidCallback? onUndo;
 
   @override
   Widget build(BuildContext context) {
@@ -264,6 +310,8 @@ class UsageEventCard extends StatelessWidget {
           Text('${discarded ? 'ทิ้ง' : 'ใช้ไป'} ${formatQty(event.amount)} ${event.unit} · เหลือ ${formatQty(event.remaining)} ${event.unit}', style: const TextStyle(fontSize: 12)),
           Text('${formatDate(date)} เวลา $time', style: const TextStyle(color: Colors.black54, fontSize: 12)),
         ])),
+        if (onUndo != null) IconButton(tooltip: 'ยกเลิกการใช้ครั้งนี้',
+          onPressed: onUndo, icon: const Icon(Icons.undo), color: seedGreen),
       ]),
     ));
   }
