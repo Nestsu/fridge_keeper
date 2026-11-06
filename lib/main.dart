@@ -220,7 +220,7 @@ class FoodCard extends StatelessWidget {
       child: Padding(padding: const EdgeInsets.all(12), child: Row(children: [
         ClipRRect(borderRadius: BorderRadius.circular(10), child: SizedBox(width: 56, height: 56, child: item.imagePath == null
           ? const ColoredBox(color: Color(0xFFE8F3EB), child: Icon(Icons.restaurant, color: seedGreen))
-          : Image.file(File(item.imagePath!), fit: BoxFit.cover, errorBuilder: (_, _, _) => const ColoredBox(color: Color(0xFFE8F3EB), child: Icon(Icons.broken_image_outlined))))),
+          : Image.file(File(item.imagePath!), fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => const ColoredBox(color: Color(0xFFE8F3EB), child: Icon(Icons.broken_image_outlined))))),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -314,7 +314,7 @@ class _FoodEditorState extends State<FoodEditor> {
     body: Form(key: _form, child: ListView(padding: const EdgeInsets.all(16), children: [
       Center(child: InkWell(onTap: _pickImage, borderRadius: BorderRadius.circular(16), child: ClipRRect(borderRadius: BorderRadius.circular(16), child: SizedBox(width: 128, height: 128,
         child: _imagePath == null ? const ColoredBox(color: Color(0xFFE1F0E6), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.add_a_photo_outlined, color: seedGreen, size: 32), SizedBox(height: 8), Text('เพิ่มรูปภาพ')]))
-          : Image.file(File(_imagePath!), fit: BoxFit.cover, errorBuilder: (_, _, _) => const Icon(Icons.broken_image)),
+          : Image.file(File(_imagePath!), fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image)),
       )))),
       const SizedBox(height: 20),
       TextFormField(controller: _name, textCapitalization: TextCapitalization.sentences, decoration: const InputDecoration(labelText: 'ชื่ออาหาร *', hintText: 'เช่น นมสด'),
