@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'data/food_database.dart';
 import 'models/food_item.dart';
+import 'services/expiry_notifications.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -68,6 +69,12 @@ class _HomePageState extends State<HomePage> {
       final items = await FoodDatabase.instance.all();
       final events = await FoodDatabase.instance.history();
       if (mounted) setState(() { _items = items; _events = events; _loading = false; _error = null; });
+      try {
+        await ExpiryNotifications.instance.reschedule(items);
+      } catch (e) {
+        // Notifications should never prevent the offline inventory from loading.
+        debugPrint('Could not schedule expiry notifications: $e');
+      }
     } catch (e) {
       if (mounted) setState(() { _loading = false; _error = '$e'; });
     }
@@ -76,6 +83,12 @@ class _HomePageState extends State<HomePage> {
   Future<void> _openEditor([FoodItem? item]) async {
     final saved = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => FoodEditor(item: item)));
     if (saved == true) await _reload();
+  }
+
+  Future<void> _openNotificationSettings() async {
+    await Navigator.push<void>(context, MaterialPageRoute(
+      builder: (_) => const ExpiryNotificationSettingsPage()));
+    if (mounted) await _reload();
   }
 
   Future<void> _useItem(FoodItem item, {required String action, required double amount}) async {
@@ -201,7 +214,11 @@ class _HomePageState extends State<HomePage> {
     }).toList();
     return Scaffold(
       appBar: AppBar(title: const Row(children: [Icon(Icons.kitchen, color: seedGreen), SizedBox(width: 10), Text('Fridge Keeper')]),
-        actions: [IconButton(tooltip: 'รีเฟรช', onPressed: _reload, icon: const Icon(Icons.refresh))]),
+        actions: [
+          IconButton(tooltip: 'ตั้งค่าแจ้งเตือน', onPressed: _openNotificationSettings,
+            icon: const Icon(Icons.notifications_outlined)),
+          IconButton(tooltip: 'รีเฟรช', onPressed: _reload, icon: const Icon(Icons.refresh)),
+        ]),
       body: _loading ? const Center(child: CircularProgressIndicator()) : _error != null
         ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('เปิดฐานข้อมูลไม่ได้\n$_error')))
         : RefreshIndicator(onRefresh: _reload, child: CustomScrollView(slivers: [
@@ -352,6 +369,95 @@ class FoodCard extends StatelessWidget {
       ])),
     ));
   }
+}
+
+class ExpiryNotificationSettingsPage extends StatefulWidget {
+  const ExpiryNotificationSettingsPage({super.key});
+  @override
+  State<ExpiryNotificationSettingsPage> createState() => _ExpiryNotificationSettingsPageState();
+}
+
+class _ExpiryNotificationSettingsPageState extends State<ExpiryNotificationSettingsPage> {
+  bool _loading = true;
+  bool _enabled = false;
+  int _days = 3;
+  String? _notice;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    final service = ExpiryNotifications.instance;
+    final enabled = await service.enabled();
+    final days = await service.reminderDays();
+    if (mounted) setState(() { _enabled = enabled; _days = days; _loading = false; });
+  }
+
+  Future<void> _toggle(bool enabled) async {
+    setState(() => _loading = true);
+    try {
+      if (enabled) {
+        final granted = await ExpiryNotifications.instance.enableNotifications();
+        _notice = granted ? 'เปิดการแจ้งเตือนแล้ว' : 'ยังไม่ได้รับอนุญาตแจ้งเตือน กรุณาอนุญาตในตั้งค่า Android';
+        _enabled = granted;
+      } else {
+        await ExpiryNotifications.instance.disableNotifications();
+        _enabled = false;
+        _notice = 'ปิดการแจ้งเตือนแล้ว';
+      }
+      await ExpiryNotifications.instance.reschedule(await FoodDatabase.instance.all());
+    } catch (e) { _notice = 'ตั้งค่าไม่สำเร็จ: $e'; }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _changeDays(int days) async {
+    try {
+      await ExpiryNotifications.instance.setDays(days);
+      await ExpiryNotifications.instance.reschedule(await FoodDatabase.instance.all());
+      if (mounted) setState(() { _days = days; _notice = 'บันทึกการเตือนล่วงหน้า $days วันแล้ว'; });
+    } catch (e) {
+      if (mounted) setState(() => _notice = 'ตั้งค่าไม่สำเร็จ: $e');
+    }
+  }
+
+  Future<void> _testNotification() async {
+    try {
+      await ExpiryNotifications.instance.showTest();
+      if (mounted) setState(() => _notice = 'ส่งแจ้งเตือนทดสอบแล้ว ลองดูแถบแจ้งเตือนของ Android');
+    } catch (e) {
+      if (mounted) setState(() => _notice = 'ทดสอบไม่สำเร็จ: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('ตั้งค่าแจ้งเตือน')),
+    body: _loading ? const Center(child: CircularProgressIndicator()) : ListView(padding: const EdgeInsets.all(16), children: [
+      Card(color: Colors.white, child: SwitchListTile(
+        title: const Text('แจ้งเตือนอาหารใกล้หมดอายุ'),
+        subtitle: const Text('เตือนผ่าน Android โดยไม่ใช้อินเทอร์เน็ต'),
+        value: _enabled, onChanged: _toggle,
+      )),
+      const SizedBox(height: 12),
+      const Text('เตือนล่วงหน้า', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 8),
+      SegmentedButton<int>(segments: const [
+        ButtonSegment(value: 1, label: Text('1 วัน')),
+        ButtonSegment(value: 3, label: Text('3 วัน')),
+        ButtonSegment(value: 7, label: Text('7 วัน')),
+      ], selected: {_days}, onSelectionChanged: (value) => _changeDays(value.first)),
+      const SizedBox(height: 10),
+      const Text('กำหนดแจ้งเตือนช่วง 09:00 น. ของวันที่เลือก (Android อาจส่งช้ากว่าเวลานี้เล็กน้อย)',
+        style: TextStyle(color: Colors.black54)),
+      const SizedBox(height: 24),
+      OutlinedButton.icon(onPressed: _enabled ? _testNotification : null,
+        icon: const Icon(Icons.notifications_active_outlined), label: const Text('ทดสอบแจ้งเตือนทันที')),
+      if (_notice != null) Padding(padding: const EdgeInsets.only(top: 14), child: Text(_notice!, style: const TextStyle(color: seedGreen))),
+      const SizedBox(height: 18),
+      const Text('การเตือนจะจัดตารางใหม่เมื่อเพิ่ม แก้ไข หรือใช้หมดอาหาร อาหารที่ไม่ระบุวันหมดอายุจะไม่ถูกตั้งเตือน และไม่ต้องเปิดแอปค้างไว้',
+        style: TextStyle(color: Colors.black54)),
+    ]),
+  );
 }
 
 class FoodEditor extends StatefulWidget {
