@@ -82,10 +82,12 @@ class _HomePageState extends State<HomePage> {
     try {
       await FoodDatabase.instance.recordUsage(item, action: action, amount: amount);
       await _reload();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${action == 'discarded' ? 'บันทึกการทิ้ง' : 'ใช้ไป'} ${formatQty(amount)} ${item.unit} · ${item.name}'),
-        duration: const Duration(seconds: 2),
-      ));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${action == 'discarded' ? 'บันทึกการทิ้ง' : 'ใช้ไป'} ${formatQty(amount)} ${item.unit} · ${item.name}'),
+          duration: const Duration(seconds: 2),
+        ));
+      }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')));
     }
