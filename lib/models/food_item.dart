@@ -11,6 +11,7 @@ class FoodItem {
     required this.updatedAt,
     this.expiryDate,
     this.imagePath,
+    this.zoneId,
     this.status = 'active',
   });
 
@@ -23,6 +24,7 @@ class FoodItem {
   final DateTime purchaseDate;
   final DateTime? expiryDate;
   final String? imagePath;
+  final String? zoneId;
   final String status;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -37,14 +39,14 @@ class FoodItem {
   FoodItem copyWith({double? quantity, String? status, DateTime? updatedAt}) => FoodItem(
         id: id, name: name, category: category, quantity: quantity ?? this.quantity,
         unit: unit, location: location, purchaseDate: purchaseDate,
-        expiryDate: expiryDate, imagePath: imagePath,
+        expiryDate: expiryDate, imagePath: imagePath, zoneId: zoneId,
         status: status ?? this.status, createdAt: createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
       );
 
   Map<String, Object?> toMap() => {
         'id': id, 'name': name, 'category': category, 'quantity': quantity,
-        'unit': unit, 'location': location,
+        'unit': unit, 'location': location, 'zone_id': zoneId,
         'purchase_date': purchaseDate.toIso8601String(),
         'expiry_date': expiryDate?.toIso8601String(),
         'image_path': imagePath, 'status': status,
@@ -59,6 +61,7 @@ class FoodItem {
         quantity: (map['quantity'] as num).toDouble(),
         unit: map['unit'] as String,
         location: map['location'] as String,
+        zoneId: map['zone_id'] as String?,
         purchaseDate: DateTime.parse(map['purchase_date'] as String),
         expiryDate: map['expiry_date'] == null ? null : DateTime.parse(map['expiry_date'] as String),
         imagePath: map['image_path'] as String?,
