@@ -136,6 +136,37 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     }
   }
 
+  Future<void> _reorderZone(
+      String fridgeId, int oldIndex, int newIndex) async {
+    if (oldIndex < newIndex) newIndex -= 1;
+    final fridgeZones = _zones.where((z) => z.fridgeId == fridgeId).toList();
+    if (oldIndex < 0 || oldIndex >= fridgeZones.length ||
+        newIndex < 0 || newIndex >= fridgeZones.length ||
+        oldIndex == newIndex) {
+      return;
+    }
+
+    final reordered = List<StorageZone>.of(fridgeZones);
+    final moved = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, moved);
+    // Update instantly so ReorderableListView sees the new order at drop.
+    setState(() {
+      final iterator = reordered.iterator;
+      _zones = _zones.map((zone) {
+        if (zone.fridgeId != fridgeId) return zone;
+        iterator.moveNext();
+        return iterator.current;
+      }).toList();
+    });
+    try {
+      await FoodDatabase.instance.reorderZones(
+        fridgeId, reordered.map((zone) => zone.id).toList());
+    } catch (e) {
+      _message('สลับชั้นไม่สำเร็จ: $e');
+    }
+    await _refresh();
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('จัดการตู้เย็นและชั้น')),
@@ -152,7 +183,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
         const Text('กำหนดตู้เย็นและช่องเก็บของตามบ้านจริงของคุณ',
           style: TextStyle(fontSize: 15)),
         const SizedBox(height: 6),
-        const Text('แตะอาหารที่ชั้นเพื่อดูรายการ ย้ายอาหารได้จากหน้าแก้ไขอาหาร',
+        const Text('แตะชั้นเพื่อดูของ กดค้างที่สัญลักษณ์ ≡ แล้วลากเรียงตำแหน่งให้ตรงกับตู้เย็นจริง',
           style: TextStyle(color: Colors.black54)),
         const SizedBox(height: 14),
         for (final fridge in _fridges) _buildFridge(fridge),
@@ -200,8 +231,16 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
           const Divider(height: 20),
           if (zones.isEmpty) const Padding(
             padding: EdgeInsets.all(10), child: Text('ยังไม่มีชั้นหรือช่อง')),
-          for (var i = 0; i < zones.length; i++)
-            _buildZone(zones[i], i, zones.length),
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            itemCount: zones.length,
+            onReorder: (oldIndex, newIndex) =>
+                _reorderZone(fridge.id, oldIndex, newIndex),
+            itemBuilder: (context, index) => _buildZone(
+              zones[index], index, zones.length),
+          ),
           TextButton.icon(
             icon: const Icon(Icons.add),
             label: const Text('เพิ่มช่อง / เพิ่มชั้น'),
@@ -220,7 +259,15 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     final foods = _foods.where((f) =>
         f.zoneId == zone.id && f.status == 'active').toList();
     return ExpansionTile(
+      key: ValueKey(zone.id),
       tilePadding: const EdgeInsets.symmetric(horizontal: 2),
+      trailing: ReorderableDragStartListener(
+        index: index,
+        child: const Padding(
+          padding: EdgeInsets.all(10),
+          child: Icon(Icons.drag_handle, color: Color(0xFF20875B)),
+        ),
+      ),
       leading: const Icon(Icons.layers_outlined, color: Color(0xFF20875B)),
       title: Text(zone.name),
       subtitle: Text('${foods.length} รายการ'),
