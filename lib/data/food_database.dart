@@ -2,6 +2,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import '../models/food_item.dart';
+import '../models/storage_zone.dart';
 
 class FoodDatabase {
   FoodDatabase._();
@@ -13,7 +14,7 @@ class FoodDatabase {
     final dbPath = await getDatabasesPath();
     return _database = await openDatabase(
       p.join(dbPath, 'fridge_keeper.db'),
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE foods (
@@ -23,6 +24,7 @@ class FoodDatabase {
             quantity REAL NOT NULL,
             unit TEXT NOT NULL,
             location TEXT NOT NULL,
+            zone_id TEXT,
             purchase_date TEXT NOT NULL,
             expiry_date TEXT,
             image_path TEXT,
@@ -33,9 +35,16 @@ class FoodDatabase {
         ''');
         await db.execute('CREATE INDEX idx_foods_status_expiry ON foods(status, expiry_date)');
         await _createUsageTable(db);
+        await _createStorageTables(db);
+        await _migrateLegacyLocations(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await _createUsageTable(db);
+        if (oldVersion < 3) {
+          await db.execute('ALTER TABLE foods ADD COLUMN zone_id TEXT');
+          await _createStorageTables(db);
+          await _migrateLegacyLocations(db);
+        }
       },
     );
   }
@@ -54,6 +63,167 @@ class FoodDatabase {
       )
     ''');
     await db.execute('CREATE INDEX idx_usage_recorded_at ON usage_events(recorded_at)');
+  }
+
+
+  static const defaultFridgeId = 'fridge-default';
+
+  static Future<void> _createStorageTables(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE storage_fridges (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE storage_zones (
+        id TEXT PRIMARY KEY,
+        fridge_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        position INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY(fridge_id) REFERENCES storage_fridges(id)
+      )
+    ''');
+    await db.insert('storage_fridges',
+      {'id': defaultFridgeId, 'name': 'ตู้เย็นหลัก'});
+  }
+
+  /// Legacy location labels remain readable, and are assigned a matching zone.
+  static Future<void> _migrateLegacyLocations(DatabaseExecutor db) async {
+    final rows = await db.query('foods', columns: ['location'],
+      distinct: true);
+    final labels = <String>{
+      'ช่องแช่เย็น', 'ช่องแช่แข็ง', 'ช่องประตู', 'ช่องผัก',
+      for (final row in rows) (row['location'] as String? ?? '').trim(),
+    }..remove('');
+    var i = 0;
+    for (final name in labels) {
+      final id = 'legacy-zone-${i++}';
+      await db.insert('storage_zones', {
+        'id': id, 'fridge_id': defaultFridgeId,
+        'name': name, 'position': i,
+      });
+      await db.update('foods', {'zone_id': id},
+        where: 'location = ? AND zone_id IS NULL', whereArgs: [name]);
+    }
+  }
+
+  Future<List<StorageFridge>> fridges() async {
+    final db = await database;
+    return (await db.query('storage_fridges', orderBy: 'rowid ASC'))
+        .map(StorageFridge.fromMap).toList();
+  }
+
+  Future<List<StorageZone>> zones() async {
+    final db = await database;
+    return (await db.query('storage_zones',
+      orderBy: 'fridge_id ASC, position ASC, rowid ASC'))
+        .map(StorageZone.fromMap).toList();
+  }
+
+  String _nextId() => DateTime.now().microsecondsSinceEpoch.toString();
+
+  Future<void> addFridge(String name) async {
+    final clean = name.trim();
+    if (clean.isEmpty) throw StateError('กรุณาใส่ชื่อตู้เย็น');
+    final db = await database;
+    await db.insert('storage_fridges', {'id': _nextId(), 'name': clean});
+  }
+
+  Future<void> renameFridge(String id, String name) async {
+    final clean = name.trim();
+    if (clean.isEmpty) throw StateError('กรุณาใส่ชื่อตู้เย็น');
+    final db = await database;
+    await db.update('storage_fridges', {'name': clean},
+      where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> deleteFridge(String id) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final fridges = await txn.query('storage_fridges');
+      if (fridges.length <= 1) throw StateError('ต้องมีตู้เย็นอย่างน้อยหนึ่งตู้');
+      final zones = await txn.query('storage_zones',
+        where: 'fridge_id = ?', whereArgs: [id]);
+      for (final zone in zones) {
+        final used = await txn.query('foods', columns: ['id'],
+          where: 'zone_id = ?', whereArgs: [zone['id']], limit: 1);
+        if (used.isNotEmpty) throw StateError('ย้ายอาหารออกจากตู้เย็นนี้ก่อนลบ');
+      }
+      await txn.delete('storage_zones', where: 'fridge_id = ?', whereArgs: [id]);
+      await txn.delete('storage_fridges', where: 'id = ?', whereArgs: [id]);
+    });
+  }
+
+  Future<void> addZone(String fridgeId, String name) async {
+    final clean = name.trim();
+    if (clean.isEmpty) throw StateError('กรุณาใส่ชื่อช่องหรือชั้น');
+    final db = await database;
+    final fridges = await db.query('storage_fridges',
+      where: 'id = ?', whereArgs: [fridgeId], limit: 1);
+    if (fridges.isEmpty) throw StateError('ไม่พบตู้เย็น');
+    final current = await db.query('storage_zones', columns: ['position'],
+      where: 'fridge_id = ?', whereArgs: [fridgeId],
+      orderBy: 'position DESC', limit: 1);
+    final position = current.isEmpty ? 0 : (current.first['position'] as int) + 1;
+    await db.insert('storage_zones', {
+      'id': _nextId(), 'fridge_id': fridgeId,
+      'name': clean, 'position': position,
+    });
+  }
+
+  Future<void> renameZone(String zoneId, String name) async {
+    final clean = name.trim();
+    if (clean.isEmpty) throw StateError('กรุณาใส่ชื่อช่องหรือชั้น');
+    final db = await database;
+    // Keep the legacy display label in sync for all associated food.
+    await db.transaction((txn) async {
+      await txn.update('storage_zones', {'name': clean},
+        where: 'id = ?', whereArgs: [zoneId]);
+      await txn.update('foods', {'location': clean},
+        where: 'zone_id = ?', whereArgs: [zoneId]);
+    });
+  }
+
+  Future<void> moveZone(String zoneId, int direction) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final found = await txn.query('storage_zones',
+        where: 'id = ?', whereArgs: [zoneId], limit: 1);
+      if (found.isEmpty) return;
+      final zone = found.single;
+      final siblings = await txn.query('storage_zones',
+        where: 'fridge_id = ?', whereArgs: [zone['fridge_id']],
+        orderBy: 'position ASC, rowid ASC');
+      final index = siblings.indexWhere((row) => row['id'] == zoneId);
+      final target = index + direction;
+      if (target < 0 || target >= siblings.length) return;
+      final otherId = siblings[target]['id'] as String;
+      await txn.update('storage_zones', {'position': target},
+        where: 'id = ?', whereArgs: [zoneId]);
+      await txn.update('storage_zones', {'position': index},
+        where: 'id = ?', whereArgs: [otherId]);
+    });
+  }
+
+  Future<void> deleteZone(String zoneId) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      // Includes used/discarded stock: historical rows must not be orphaned.
+      final foods = await txn.query('foods', columns: ['id'],
+        where: 'zone_id = ?', whereArgs: [zoneId], limit: 1);
+      if (foods.isNotEmpty) throw StateError('ย้ายอาหารออกจากชั้นนี้ก่อนลบ');
+      await txn.delete('storage_zones',
+        where: 'id = ?', whereArgs: [zoneId]);
+    });
+  }
+
+  Future<void> moveFood(String foodId, StorageZone zone) async {
+    final db = await database;
+    await db.update('foods', {
+      'zone_id': zone.id, 'location': zone.name,
+      'updated_at': DateTime.now().toIso8601String(),
+    }, where: 'id = ?', whereArgs: [foodId]);
   }
 
   Future<List<UsageEvent>> history() async {
