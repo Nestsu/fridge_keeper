@@ -247,7 +247,7 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.kitchen_outlined)),
           IconButton(tooltip: 'ตั้งค่าแจ้งเตือน', onPressed: _openNotificationSettings,
             icon: const Icon(Icons.notifications_outlined)),
-          IconButton(tooltip: 'รีเฟรช', onPressed: _reload, icon: const Icon(Icons.refresh)),
+          // Swipe down on the list to refresh; keep the app bar compact.
         ]),
       body: _loading ? const Center(child: CircularProgressIndicator()) : _error != null
         ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('เปิดฐานข้อมูลไม่ได้\n$_error')))
