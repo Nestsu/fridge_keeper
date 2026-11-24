@@ -1,4 +1,4 @@
-# Fridge Keeper V0.6
+# Fridge Keeper V0.6.1
 
 Offline-first Android Flutter app to track food, quantities, storage locations, and expiry dates. Thai UI. No login, cloud, or product key.
 
@@ -17,6 +17,7 @@ Offline-first Android Flutter app to track food, quantities, storage locations, 
 
 - Tap the **fridge icon** in the Home app bar to manage multiple fridges.
 - Add, rename, remove fridges; add, rename, reorder, remove shelves/zones.
+- **Hold and drag the ≡ handle** at the right of each shelf to arrange it as on your physical fridge. Reordering is persisted per fridge in SQLite, without moving food between zones.
 - Expand a shelf to see its active food, and tap the move icon to relocate food.
 - In Add/Edit Food, choose a precise **fridge › shelf** location.
 - SQLite migration v2 → v3 creates the default fridge and maps previous
@@ -32,7 +33,7 @@ Offline-first Android Flutter app to track food, quantities, storage locations, 
 1. `git pull origin main`, `flutter pub get`, `flutter analyze`, `flutter test`.
 2. Run `flutter run` on the same Android installation **without uninstalling**.
 3. Check that previously saved food and usage history still exist.
-4. Tap the fridge icon, create a shelf, rename/reorder it and create a second fridge.
+4. Tap the fridge icon, create a shelf, hold the ≡ handle to drag/reorder it, then reopen the screen to confirm the order persists. Create a second fridge to verify independent orders.
 5. Edit food, choose the new fridge/shelf and save; verify the location on the food card.
 6. Tap fridge icon again; expand the new shelf and move food to another shelf.
 7. Attempt to delete an occupied shelf: it must be blocked.
