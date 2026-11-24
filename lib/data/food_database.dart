@@ -147,8 +147,13 @@ class FoodDatabase {
         where: 'fridge_id = ?', whereArgs: [id]);
       for (final zone in zones) {
         final used = await txn.query('foods', columns: ['id'],
-          where: 'zone_id = ?', whereArgs: [zone['id']], limit: 1);
+          where: 'zone_id = ? AND status = ?', whereArgs: [zone['id'], 'active'],
+          limit: 1);
         if (used.isNotEmpty) throw StateError('ย้ายอาหารออกจากตู้เย็นนี้ก่อนลบ');
+        // Archived stock is retained; its old location text is still preserved.
+        await txn.update('foods', {'zone_id': null},
+          where: 'zone_id = ? AND status != ?',
+          whereArgs: [zone['id'], 'active']);
       }
       await txn.delete('storage_zones', where: 'fridge_id = ?', whereArgs: [id]);
       await txn.delete('storage_fridges', where: 'id = ?', whereArgs: [id]);
@@ -211,10 +216,14 @@ class FoodDatabase {
   Future<void> deleteZone(String zoneId) async {
     final db = await database;
     await db.transaction((txn) async {
-      // Includes used/discarded stock: historical rows must not be orphaned.
       final foods = await txn.query('foods', columns: ['id'],
-        where: 'zone_id = ?', whereArgs: [zoneId], limit: 1);
+        where: 'zone_id = ? AND status = ?',
+        whereArgs: [zoneId, 'active'], limit: 1);
       if (foods.isNotEmpty) throw StateError('ย้ายอาหารออกจากชั้นนี้ก่อนลบ');
+      // Only detached archived food may outlive a shelf; retain legacy label.
+      await txn.update('foods', {'zone_id': null},
+        where: 'zone_id = ? AND status != ?',
+        whereArgs: [zoneId, 'active']);
       await txn.delete('storage_zones',
         where: 'id = ?', whereArgs: [zoneId]);
     });
