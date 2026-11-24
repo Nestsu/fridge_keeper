@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 
 import 'data/food_database.dart';
 import 'models/food_item.dart';
+import 'models/storage_zone.dart';
+import 'screens/storage_manager_page.dart';
 import 'services/expiry_notifications.dart';
 
 void main() {
@@ -83,6 +85,12 @@ class _HomePageState extends State<HomePage> {
   Future<void> _openEditor([FoodItem? item]) async {
     final saved = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => FoodEditor(item: item)));
     if (saved == true) await _reload();
+  }
+
+  Future<void> _openStorageManager() async {
+    await Navigator.push<void>(context, MaterialPageRoute(
+      builder: (_) => const StorageManagerPage()));
+    if (mounted) await _reload();
   }
 
   Future<void> _openNotificationSettings() async {
@@ -215,6 +223,8 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       appBar: AppBar(title: const Row(children: [Icon(Icons.kitchen, color: seedGreen), SizedBox(width: 10), Text('Fridge Keeper')]),
         actions: [
+          IconButton(tooltip: 'จัดการตู้เย็นและชั้น', onPressed: _openStorageManager,
+            icon: const Icon(Icons.kitchen_outlined)),
           IconButton(tooltip: 'ตั้งค่าแจ้งเตือน', onPressed: _openNotificationSettings,
             icon: const Icon(Icons.notifications_outlined)),
           IconButton(tooltip: 'รีเฟรช', onPressed: _reload, icon: const Icon(Icons.refresh)),
@@ -472,6 +482,9 @@ class _FoodEditorState extends State<FoodEditor> {
   late final TextEditingController _name;
   late final TextEditingController _quantity;
   late String _category, _unit, _location;
+  String? _zoneId;
+  List<StorageZone> _zones = [];
+  List<StorageFridge> _fridges = [];
   late DateTime _purchase;
   DateTime? _expiry;
   String? _imagePath;
@@ -486,9 +499,30 @@ class _FoodEditorState extends State<FoodEditor> {
     _category = item?.category ?? categories.first;
     _unit = item?.unit ?? units.first;
     _location = item?.location ?? locations.first;
+    _zoneId = item?.zoneId;
+    _loadZones();
     _purchase = item?.purchaseDate ?? DateTime.now();
     _expiry = item?.expiryDate;
     _imagePath = item?.imagePath;
+  }
+
+  Future<void> _loadZones() async {
+    try {
+      final zones = await FoodDatabase.instance.zones();
+      final fridges = await FoodDatabase.instance.fridges();
+      if (!mounted) return;
+      setState(() {
+        _zones = zones;
+        _fridges = fridges;
+        if (_zoneId == null && widget.item == null && zones.isNotEmpty) {
+          _zoneId = zones.first.id;
+          _location = zones.first.name;
+        }
+      });
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('โหลดตำแหน่งไม่สำเร็จ: $e')));
+    }
   }
 
   @override
@@ -525,7 +559,7 @@ class _FoodEditorState extends State<FoodEditor> {
       final item = FoodItem(
         id: old?.id ?? now.microsecondsSinceEpoch.toString(), name: _name.text.trim(),
         category: _category, quantity: double.parse(_quantity.text.trim()), unit: _unit,
-        location: _location, purchaseDate: _purchase, expiryDate: _expiry, imagePath: _imagePath,
+        location: _location, zoneId: _zoneId, purchaseDate: _purchase, expiryDate: _expiry, imagePath: _imagePath,
         status: old?.status ?? 'active', createdAt: old?.createdAt ?? now, updatedAt: now,
       );
       await FoodDatabase.instance.save(item);
@@ -556,7 +590,30 @@ class _FoodEditorState extends State<FoodEditor> {
         Expanded(child: DropdownButtonFormField<String>(initialValue: _unit, decoration: const InputDecoration(labelText: 'หน่วย'), items: units.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(), onChanged: (v) => setState(() => _unit = v!))),
       ]),
       const SizedBox(height: 14),
-      DropdownButtonFormField<String>(initialValue: _location, decoration: const InputDecoration(labelText: 'เก็บที่ไหน'), items: locations.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(), onChanged: (v) => setState(() => _location = v!)),
+      DropdownButtonFormField<String>(
+        key: ValueKey('${_zoneId ?? 'none'}-${_zones.length}'),
+        initialValue: _zones.any((z) => z.id == _zoneId) ? _zoneId : null,
+        isExpanded: true,
+        decoration: const InputDecoration(labelText: 'ตู้เย็น / ช่อง / ชั้น'),
+        hint: Text(_zones.isEmpty ? 'ยังไม่มีตำแหน่ง' : 'ไม่ระบุตำแหน่ง'),
+        items: [
+          const DropdownMenuItem<String>(
+            value: '', child: Text('ไม่ระบุตำแหน่ง')),
+          ..._zones.map((zone) => DropdownMenuItem(
+            value: zone.id,
+            child: Text(storageLabel(zone, _fridges),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+          )),
+        ],
+        onChanged: (value) => setState(() {
+          _zoneId = value == '' ? null : value;
+          if (_zoneId == null) {
+            _location = 'ไม่ระบุ';
+          } else {
+            _location = _zones.firstWhere((z) => z.id == _zoneId).name;
+          }
+        }),
+      ),
       const SizedBox(height: 12),
       Card(elevation: 0, color: Colors.white, child: Column(children: [
         ListTile(leading: const Icon(Icons.shopping_bag_outlined), title: const Text('วันที่ซื้อ'), subtitle: Text(formatDate(_purchase)), trailing: const Icon(Icons.calendar_month), onTap: () => _pickDate(expiry: false)),
