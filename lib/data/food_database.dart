@@ -198,11 +198,13 @@ class FoodDatabase {
       final index = siblings.indexWhere((row) => row['id'] == zoneId);
       final target = index + direction;
       if (target < 0 || target >= siblings.length) return;
-      final otherId = siblings[target]['id'] as String;
-      await txn.update('storage_zones', {'position': target},
-        where: 'id = ?', whereArgs: [zoneId]);
-      await txn.update('storage_zones', {'position': index},
-        where: 'id = ?', whereArgs: [otherId]);
+      final ordered = siblings.map((row) => row['id'] as String).toList();
+      final moved = ordered.removeAt(index);
+      ordered.insert(target, moved);
+      for (var i = 0; i < ordered.length; i++) {
+        await txn.update('storage_zones', {'position': i},
+          where: 'id = ?', whereArgs: [ordered[i]]);
+      }
     });
   }
 
