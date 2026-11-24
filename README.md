@@ -21,9 +21,9 @@ Offline-first Android Flutter app to track food, quantities, storage locations, 
 - In Add/Edit Food, choose a precise **fridge › shelf** location.
 - SQLite migration v2 → v3 creates the default fridge and maps previous
   location labels to zones without deleting foods, usage history, or photos.
-- Zone deletion is blocked if ANY food still references it, including already
-  used/discarded food; relocate or remove records deliberately first.
-- Fridge deletion is blocked while it contains food, or if it is the last fridge.
+- Zone deletion is blocked while ACTIVE food remains there; move it first.
+  Completed/discarded records retain their old text location and usage history.
+- Fridge deletion is blocked while active food remains, or if it is the last fridge.
 - No login or network connection required.
 - This is a location-list UI, not a scaled 3D or drag-and-drop fridge diagram.
 
