@@ -54,6 +54,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   List<FoodItem> _items = [];
   List<UsageEvent> _events = [];
+  List<StorageZone> _displayZones = [];
+  List<StorageFridge> _displayFridges = [];
   bool _loading = true;
   String? _error;
   int _tab = 0;
@@ -70,7 +72,16 @@ class _HomePageState extends State<HomePage> {
     try {
       final items = await FoodDatabase.instance.all();
       final events = await FoodDatabase.instance.history();
-      if (mounted) setState(() { _items = items; _events = events; _loading = false; _error = null; });
+      final zones = await FoodDatabase.instance.zones();
+      final fridges = await FoodDatabase.instance.fridges();
+      if (mounted) setState(() {
+        _items = items;
+        _events = events;
+        _displayZones = zones;
+        _displayFridges = fridges;
+        _loading = false;
+        _error = null;
+      });
       try {
         await ExpiryNotifications.instance.reschedule(items);
       } catch (e) {
@@ -203,6 +214,15 @@ class _HomePageState extends State<HomePage> {
     ));
   }
 
+  String _foodLocation(FoodItem item) {
+    for (final zone in _displayZones) {
+      if (zone.id == item.zoneId) {
+        return storageLabel(zone, _displayFridges);
+      }
+    }
+    return item.location;
+  }
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
@@ -289,7 +309,8 @@ class _HomePageState extends State<HomePage> {
               Text(_items.isEmpty ? 'ยังไม่มีอาหารในตู้เย็น\nกด + เพื่อเพิ่มรายการแรก' : 'ไม่มีรายการที่ตรงกับตัวกรอง', textAlign: TextAlign.center),
             ]))))
             else SliverPadding(padding: const EdgeInsets.fromLTRB(16, 2, 16, 100), sliver: SliverList.builder(itemCount: shown.length, itemBuilder: (ctx, i) => FoodCard(
-              item: shown[i], now: now, onTap: () => _showActions(shown[i]),
+              item: shown[i], now: now, locationLabel: _foodLocation(shown[i]),
+              onTap: () => _showActions(shown[i]),
               onQuickUse: () => _useItem(shown[i], action: 'used', amount: shown[i].quantity < 1 ? shown[i].quantity : 1),
             ))),
           ])),
@@ -345,9 +366,10 @@ class UsageEventCard extends StatelessWidget {
 }
 
 class FoodCard extends StatelessWidget {
-  const FoodCard({super.key, required this.item, required this.now, required this.onTap, required this.onQuickUse});
+  const FoodCard({super.key, required this.item, required this.now, required this.onTap, required this.onQuickUse, required this.locationLabel});
   final FoodItem item;
   final DateTime now;
+  final String locationLabel;
   final VoidCallback onTap;
   final VoidCallback onQuickUse;
 
@@ -366,7 +388,7 @@ class FoodCard extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 3), Text('${formatQty(item.quantity)} ${item.unit} · ${item.location}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          const SizedBox(height: 3), Text('${formatQty(item.quantity)} ${item.unit} · ${locationLabel}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.black54)),
           const SizedBox(height: 5), Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: color, fontSize: 13)),
         ])),
         IconButton.filledTonal(
@@ -559,7 +581,9 @@ class _FoodEditorState extends State<FoodEditor> {
       final item = FoodItem(
         id: old?.id ?? now.microsecondsSinceEpoch.toString(), name: _name.text.trim(),
         category: _category, quantity: double.parse(_quantity.text.trim()), unit: _unit,
-        location: _location, zoneId: _zoneId, purchaseDate: _purchase, expiryDate: _expiry, imagePath: _imagePath,
+        location: _zoneId != null && _zones.any((z) => z.id == _zoneId)
+          ? _zones.firstWhere((z) => z.id == _zoneId).name : _location,
+        zoneId: _zoneId, purchaseDate: _purchase, expiryDate: _expiry, imagePath: _imagePath,
         status: old?.status ?? 'active', createdAt: old?.createdAt ?? now, updatedAt: now,
       );
       await FoodDatabase.instance.save(item);
