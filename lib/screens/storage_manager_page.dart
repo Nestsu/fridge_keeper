@@ -53,25 +53,37 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
   }
 
   Future<String?> _askName(String title, {String initial = ''}) async {
-    final controller = TextEditingController(text: initial);
-    final value = await showDialog<String>(context: context,
+    // Avoid disposing an externally owned TextEditingController while the
+    // dialog's closing transition still has its TextField mounted.
+    var currentName = initial;
+    final value = await showDialog<String>(
+      context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(title),
-        content: TextField(
-          controller: controller, autofocus: true, maxLength: 50,
+        content: TextFormField(
+          initialValue: initial,
+          autofocus: true,
+          maxLength: 50,
           decoration: const InputDecoration(hintText: 'ระบุชื่อ'),
-          onSubmitted: (v) => Navigator.pop(dialogContext, v.trim()),
+          onChanged: (value) => currentName = value,
+          onFieldSubmitted: (value) =>
+              Navigator.of(dialogContext).pop(value.trim()),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('ยกเลิก')),
-          FilledButton(onPressed: () => Navigator.pop(
-            dialogContext, controller.text.trim()),
-            child: const Text('บันทึก')),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('ยกเลิก'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(currentName.trim()),
+            child: const Text('บันทึก'),
+          ),
         ],
-      ));
-    controller.dispose();
-    return value == null || value.isEmpty ? null : value;
+      ),
+    );
+    if (!mounted || value == null || value.trim().isEmpty) return null;
+    return value.trim();
   }
 
   Future<void> _perform(Future<void> Function() action) async {
