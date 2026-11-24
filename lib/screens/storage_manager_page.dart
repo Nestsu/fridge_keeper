@@ -92,6 +92,34 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
           ],
         )) ?? false;
 
+  Future<void> _moveFood(FoodItem food) async {
+    final zoneId = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text('ย้าย ${food.name} ไปที่ไหน?'),
+        children: [
+          for (final zone in _zones)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, zone.id),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Text(storageLabel(zone, _fridges)),
+              ),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('ยกเลิก'),
+          ),
+        ],
+      ),
+    );
+    if (zoneId == null) return;
+    final zone = _zones.where((z) => z.id == zoneId).firstOrNull;
+    if (zone != null) {
+      await _perform(() => FoodDatabase.instance.moveFood(food.id, zone));
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('จัดการตู้เย็นและชั้น')),
@@ -181,7 +209,12 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
           ListTile(dense: true,
             leading: const Icon(Icons.inventory_2_outlined, size: 18),
             title: Text(food.name),
-            subtitle: Text('${food.quantity} ${food.unit}')),
+            subtitle: Text('${food.quantity} ${food.unit}'),
+            trailing: IconButton(
+              tooltip: 'ย้ายไปชั้นอื่น',
+              icon: const Icon(Icons.drive_file_move_outline),
+              onPressed: () => _moveFood(food),
+            )),
         Row(mainAxisAlignment: MainAxisAlignment.end, children: [
           IconButton(tooltip: 'เลื่อนขึ้น', onPressed: index == 0 ? null :
               () => _perform(() => FoodDatabase.instance.moveZone(zone.id, -1)),
