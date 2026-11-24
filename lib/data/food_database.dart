@@ -213,6 +213,27 @@ class FoodDatabase {
     });
   }
 
+  /// Persists the complete shelf order for a single fridge atomically.
+  /// Food keeps referencing the same stable zone ID regardless of position.
+  Future<void> reorderZones(String fridgeId, List<String> orderedZoneIds) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final rows = await txn.query('storage_zones',
+        columns: ['id'], where: 'fridge_id = ?', whereArgs: [fridgeId]);
+      final existing = rows.map((row) => row['id'] as String).toSet();
+      if (orderedZoneIds.length != existing.length ||
+          orderedZoneIds.toSet().length != existing.length ||
+          !orderedZoneIds.toSet().containsAll(existing)) {
+        throw StateError('ลำดับชั้นไม่ตรงกับตู้เย็น กรุณาโหลดข้อมูลใหม่');
+      }
+      for (var i = 0; i < orderedZoneIds.length; i++) {
+        await txn.update('storage_zones', {'position': i},
+          where: 'id = ? AND fridge_id = ?',
+          whereArgs: [orderedZoneIds[i], fridgeId]);
+      }
+    });
+  }
+
   Future<void> deleteZone(String zoneId) async {
     final db = await database;
     await db.transaction((txn) async {
