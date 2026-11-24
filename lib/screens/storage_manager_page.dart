@@ -29,12 +29,14 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
       final fridges = await FoodDatabase.instance.fridges();
       final zones = await FoodDatabase.instance.zones();
       final foods = await FoodDatabase.instance.all();
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _fridges = fridges;
         _zones = zones;
         _foods = foods;
         _loading = false;
-      });
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
@@ -44,8 +46,10 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
   }
 
   void _message(String text) {
-    if (mounted) ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(text)));
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(text)));
+    }
   }
 
   Future<String?> _askName(String title, {String initial = ''}) async {
@@ -126,8 +130,9 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     floatingActionButton: FloatingActionButton.extended(
       onPressed: () async {
         final name = await _askName('เพิ่มตู้เย็น');
-        if (name != null) await _perform(() =>
-            FoodDatabase.instance.addFridge(name));
+        if (name != null) {
+          await _perform(() => FoodDatabase.instance.addFridge(name));
+        }
       },
       icon: const Icon(Icons.add), label: const Text('เพิ่มตู้เย็น')),
     body: _loading ? const Center(child: CircularProgressIndicator()) :
@@ -165,8 +170,10 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
                 if (action == 'rename') {
                   final name = await _askName('เปลี่ยนชื่อตู้เย็น',
                     initial: fridge.name);
-                  if (name != null) await _perform(() =>
-                      FoodDatabase.instance.renameFridge(fridge.id, name));
+                  if (name != null) {
+                    await _perform(() =>
+                        FoodDatabase.instance.renameFridge(fridge.id, name));
+                  }
                 } else if (await _confirmDelete(fridge.name)) {
                   await _perform(() =>
                       FoodDatabase.instance.deleteFridge(fridge.id));
@@ -188,11 +195,13 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
             label: const Text('เพิ่มช่อง / เพิ่มชั้น'),
             onPressed: () async {
               final name = await _askName('เพิ่มช่อง / ชั้น ใน ${fridge.name}');
-              if (name != null) await _perform(() =>
-                  FoodDatabase.instance.addZone(fridge.id, name));
+              if (name != null) {
+                await _perform(() =>
+                    FoodDatabase.instance.addZone(fridge.id, name));
+              }
             }),
         ])),
-      ));
+      );
   }
 
   Widget _buildZone(StorageZone zone, int index, int count) {
@@ -227,8 +236,10 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
             onPressed: () async {
               final name = await _askName('เปลี่ยนชื่อชั้น',
                 initial: zone.name);
-              if (name != null) await _perform(() =>
-                  FoodDatabase.instance.renameZone(zone.id, name));
+              if (name != null) {
+                await _perform(() =>
+                    FoodDatabase.instance.renameZone(zone.id, name));
+              }
             }),
           IconButton(tooltip: 'ลบชั้น', icon: const Icon(Icons.delete_outline),
             onPressed: () async {
