@@ -74,14 +74,16 @@ class _HomePageState extends State<HomePage> {
       final events = await FoodDatabase.instance.history();
       final zones = await FoodDatabase.instance.zones();
       final fridges = await FoodDatabase.instance.fridges();
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _items = items;
         _events = events;
         _displayZones = zones;
         _displayFridges = fridges;
         _loading = false;
         _error = null;
-      });
+        });
+      }
       try {
         await ExpiryNotifications.instance.reschedule(items);
       } catch (e) {
@@ -388,7 +390,7 @@ class FoodCard extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 3), Text('${formatQty(item.quantity)} ${item.unit} · ${locationLabel}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          const SizedBox(height: 3), Text('${formatQty(item.quantity)} ${item.unit} · $locationLabel', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.black54)),
           const SizedBox(height: 5), Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: color, fontSize: 13)),
         ])),
         IconButton.filledTonal(
@@ -542,8 +544,10 @@ class _FoodEditorState extends State<FoodEditor> {
         }
       });
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('โหลดตำแหน่งไม่สำเร็จ: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('โหลดตำแหน่งไม่สำเร็จ: $e')));
+      }
     }
   }
 
